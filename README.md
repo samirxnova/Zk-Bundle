@@ -41,8 +41,8 @@ Custom Solutions:
 
 ## 🟢 How to Start
 
-> yarn install on all SC
+> npm install
 >
-> cd bundler_ui-main
+> cd /frontend
 >
-> yarn dev
+> npm run dev
