@@ -2,7 +2,7 @@ import { ConnectButton } from "@rainbow-me/rainbowkit";
 // import styles from "../../styles/Navbar.module.css";
 import { useRouter } from "next/router";
 import styles from "../../styles/Home.module.css";
-
+import Bolt2 from "../../public/bolt2.png"
 import {
   Box,
   Button,
@@ -34,13 +34,14 @@ export default function Navbar() {
         bgImage={"linear-gradient(to right, rgb(247 255 0), rgb(182 49 167))"}
       >
         <Flex h={16} alignItems={"center"} justifyContent={"space-between"}>
-          <Box>
-            <Link href="/">
+          <Box pl={6}>
+            <Link  href="/">
               <Image
-                src={ZKS}
+                
+                src={Bolt2}
                 alt="logo"
-                width={200}
-                height={200}
+                width={64}
+                height={64}
                 onClick={() => router.push("/")}
               />
             </Link>
@@ -51,8 +52,8 @@ export default function Navbar() {
               h={16}
               justifyContent={"space-between"}
               direction={"row"}
-              fontSize={"20px"}
-              spacing={28}
+              fontSize={"18px"}
+              spacing={24}
               display="flex"
               color={"black"}
               alignItems={"center"}
@@ -74,6 +75,15 @@ export default function Navbar() {
                 }}
                 onClick={() => router.push("/your-zaaps")}
               >
+                zAAp
+              </Link>
+              <Link
+                _hover={{
+                  color: "purple.100",
+                  transition: "all 1s ease",
+                }}
+                onClick={() => router.push("/bundler")}
+              >
                 Your zAAps
               </Link>
               <Link
@@ -84,6 +94,15 @@ export default function Navbar() {
                 onClick={() => router.push("/community")}
               >
                 Hottest zAAps!
+              </Link>
+              <Link
+                _hover={{
+                  color: "purple.100",
+                  transition: "all 1s ease",
+                }}
+                onClick={() => router.push("/docs")}
+              >
+                Docs
               </Link>
             </Stack>
           </Flex>

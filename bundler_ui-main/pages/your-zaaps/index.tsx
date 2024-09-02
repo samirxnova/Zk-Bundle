@@ -10,6 +10,7 @@ import {
   Tbody,
   Tr,
   Th,
+  Flex,
   Td,
   TableContainer,
   Link,
@@ -22,7 +23,6 @@ import TokensBalanceDisplay from "../../components/tokensBalanceDisplay";
 import { useRouter } from "next/router";
 import Image from "next/image";
 import React, { FC, useEffect, useState, useCallback, useMemo } from "react";
-import { useWeb3React } from "@web3-react/core";
 import { ethers } from "ethers";
 import { IEthereumProvider } from "@argent/login-react";
 import * as zksync from "zksync-web3";
@@ -44,12 +44,17 @@ import { RouterAbi } from "../../constants/abis/RouterAbi";
 import { factoryAbi } from "../../constants/abis/PoolFactory";
 import { testAbi } from "../../constants/abis/testAbi";
 import { LendingAbi } from "@/constants/abis/LendingAbi";
+import { AAFactoryAbi } from "@/constants/abis/AAFactoryAbi";
+import { AccountAbi } from "@/constants/abis/AccountAbi";
+import { EIP712Signer, types, utils, Wallet } from "zksync-web3";
+import { sign } from "crypto";
 
 export default function Swap() {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const { address, isConnected, isDisconnected } = useAccount();
 
+  const USDC_ADDRESS = "0x0faF6df7054946141266420b43783387A78d82A9";
   const LENDING_ADDRESS = "0xA7c9A38e77290420eD06cf54d27640dE27399eB1";
 
   const WETH_ADDRESS = "0x20b28B1e4665FFf290650586ad76E977EAb90c5D";
@@ -57,7 +62,7 @@ export default function Swap() {
   const DAI_DECIMALS = 18;
   const VAULT_CONTRACT_ADDRESS = "0x4Ff94F499E1E69D687f3C3cE2CE93E717a0769F8";
   const POOL_ADDRESS = "0xe52940eDDa6ec5FDabef7C33B9C1E1d613BbA144"; // ETH/DAI
-  const ROUTER_ADDRESS = "0xB3b7fCbb8Db37bC6f572634299A58f51622A847e"; // Swap Contract
+  const ROUTER_ADDRESS = "0xB3b7fCbb8Db37bC6f572634299A58f51622A847e";
   const POOLFACTORY_ADDRESS = "0xf2FD2bc2fBC12842aAb6FbB8b1159a6a83E72006"; // Classic
   const ADDRESS_ZERO = ethers.constants.AddressZero;
   const ercAbi = [
@@ -125,39 +130,14 @@ export default function Swap() {
 /___/  |__/|__//_/ |_|/_/    /___/  /_/  /_//_//___//_/|_|   /_/   \____/ /____//_/ |_|/___/  |__,__//_/ \__//_//_/ /___/   /_//_/|_/ \___//___/  |__/|__//_/ |_|/_/    
 */
 
-  // const { account } = useWeb3React(); // get the current user's wallet address
-
-  // const provider = new ethers.providers.Web3Provider(ethereumProvider);
-
-  const [provider, setProvider] = useState<ethers.providers.Web3Provider>();
-
-  const { data: account, isError, isLoading } = useAccount({ provider });
-
-  const {
-    data: signer,
-    isError: signerIsError,
-    isLoading: signerIsLoading,
-  } = useSigner({ provider, account });
-
-  const contract = useContract({
-    address: ROUTER_ADDRESS,
-    abi: RouterAbi,
-    signer,
-  });
-
-  const Router = new ethers.Contract(ROUTER_ADDRESS, RouterAbi, signer);
-
-  const value = ethers.utils.parseEther("0.00001");
+  const value = ethers.utils.parseEther("0.0001");
 
   const withdrawMode = 2; // 1 or 2 to withdraw to user's wallet
 
-  const swapData = account
-    ? ethers.utils.defaultAbiCoder.encode(
-        ["address", "address", "uint8"],
-        [WETH_ADDRESS, account, withdrawMode] //
-      )
-    : "";
-
+  const swapData = ethers.utils.defaultAbiCoder.encode(
+    ["address", "address", "uint8"],
+    [WETH_ADDRESS, "0x079217e9a45A0e4B49C3cb9B6D93b127513D1F07", withdrawMode] // tokenIn, to, withdraw mode
+  );
   const steps = [
     {
       pool: POOL_ADDRESS,
@@ -185,17 +165,25 @@ export default function Swap() {
       Math.floor(Date.now() / 1000) + 60 * 10, // deadline // 10 minutes
     ],
     overrides: {
-      from: account, // use the current user's wallet address
+      from: "0x079217e9a45A0e4B49C3cb9B6D93b127513D1F07", // useAccountAddress
       value: value,
     },
   });
+
+  const contract = useContract({
+    address: ROUTER_ADDRESS,
+    abi: RouterAbi,
+  });
+
+  const provider = useProvider();
+  const { data: signer, isError, isLoading } = useSigner();
+
+  const Router = new ethers.Contract(ROUTER_ADDRESS, RouterAbi, signer);
 
   async function handleSwap() {
     console.log("write3 button works?");
     console.log("config 3", config3);
     console.log(contract);
-    const accountAddress = await signer.getAddress();
-    const account = new ethers.Contract(accountAddress, signer);
 
     const response = await Router.swap(
       paths, // paths
@@ -203,7 +191,6 @@ export default function Swap() {
       Math.floor(Date.now() / 1000) + 60 * 10, // deadline // 10 minutes
       {
         value: value,
-        from: account, // use the current user's wallet address
       }
     );
 
@@ -212,6 +199,58 @@ export default function Swap() {
     console.log("receipt: ", tx_receipt);
   }
 
+  /* 
+   ___   ____ ___   __   ____ __  __      ___   _____ _____ ____   __  __ _  __ ______       ___    ___          ____ ___   _____ ______ ____   ___ __  __
+  / _ \ / __// _ \ / /  / __ \\ \/ /     / _ | / ___// ___// __ \ / / / // |/ //_  __/      / _ |  / _ |        / __// _ | / ___//_  __// __ \ / _ \\ \/ /
+ / // // _/ / ___// /__/ /_/ / \  /     / __ |/ /__ / /__ / /_/ // /_/ //    /  / /        / __ | / __ |       / _/ / __ |/ /__   / /  / /_/ // , _/ \  / 
+/____//___//_/   /____/\____/  /_/     /_/ |_|\___/ \___/ \____/ \____//_/|_/  /_/        /_/ |_|/_/ |_|      /_/  /_/ |_|\___/  /_/   \____//_/|_|  /_/  
+*/
+
+  const AA_FACTORY_ADDRESS = "0xEb6D0610064b49d5868703892C3cf5A5AF10544E";
+  const AA_ABI = AAFactoryAbi;
+
+  let aa_address;
+
+  async function handleDeployAA() {
+    const aaFactory = new ethers.Contract(AA_FACTORY_ADDRESS, AA_ABI, signer);
+    console.log(aaFactory);
+
+    const owner = signer?.getAddress();
+    console.log("Account owner pk: ", owner);
+
+    // For the simplicity of the tutorial, we will use zero hash as salt
+    const salt = ethers.constants.HashZero;
+
+    console.log("Befor deploy AA");
+    const tx = await aaFactory.deployAccount(salt, owner);
+    await tx.wait();
+    console.log("After deploy AA", tx);
+  }
+
+  async function sendETHtoAA() {
+    const aaFactory = new ethers.Contract(AA_FACTORY_ADDRESS, AA_ABI, signer);
+    const owner = await signer?.getAddress();
+    const salt = ethers.constants.HashZero;
+
+    console.log("OWNER", owner);
+
+    const abiCoder = new ethers.utils.AbiCoder();
+    const accountAddress = utils.create2Address(
+      salt,
+      await aaFactory.aaBytecodeHash(),
+      abiCoder.encode(["address"], [owner]),
+      AA_FACTORY_ADDRESS
+    );
+    aa_address = accountAddress;
+
+    console.log(`Account deployed on address ${accountAddress}`);
+    await (
+      await signer.sendTransaction({
+        to: accountAddress,
+        value: ethers.utils.parseEther("0.02"),
+      })
+    ).wait();
+  }
   /* 
    __  ___ __  __ __  ______ ____ _____ ___    __    __ 
   /  |/  // / / // / /_  __//  _// ___// _ |  / /   / / 
@@ -231,48 +270,108 @@ export default function Swap() {
   const DAI = new ethers.Contract(DAI_ADDRESS, ercAbi, signer);
 
   async function handleMulticall() {
-    const accountAddress = await signer.getAddress();
-    const account = new ethers.Contract(
-      accountAddress,
-      multicallInterface,
-      signer
+    const aaFactory = new ethers.Contract(AA_FACTORY_ADDRESS, AA_ABI, signer);
+    const owner = await signer?.getAddress();
+    const salt = ethers.constants.HashZero;
+
+    console.log("OWNER", owner);
+
+    const abiCoder = new ethers.utils.AbiCoder();
+    const accountAddress = utils.create2Address(
+      salt,
+      await aaFactory.aaBytecodeHash(),
+      abiCoder.encode(["address"], [owner]),
+      AA_FACTORY_ADDRESS
+    );
+    aa_address = accountAddress;
+    console.log(aa_address, "and", signer);
+    const account = new ethers.Contract(aa_address, AccountAbi, signer);
+
+    const usdcAmount = ethers.utils.parseUnits("100", 6);
+
+    const USDC = new ethers.Contract(USDC_ADDRESS, ercAbi, signer);
+
+    let tx0 = await USDC.populateTransaction.approve(
+      LENDING_ADDRESS,
+      MAX_APPROVE
+    );
+    tx0 = {
+      ...tx0,
+      from: aa_address,
+      to: USDC_ADDRESS,
+      chainId: 280,
+      nonce: await provider.getTransactionCount(aa_address),
+      customData: {
+        gasPerPubdata: utils.DEFAULT_GAS_PER_PUBDATA_LIMIT,
+      } as types.Eip712Meta,
+      value: ethers.utils.parseEther("0"),
+      data: USDC.interface.encodeFunctionData("approve", [
+        LENDING_ADDRESS,
+        MAX_APPROVE,
+      ]),
+    };
+
+    tx0.gasPrice = await provider.getGasPrice();
+    tx0.gasLimit = await provider.estimateGas(tx0);
+
+    console.log("TX 0 is caltulating");
+
+    const signedTxHash0 = EIP712Signer.getSignedDigest(tx0);
+    const signature0 = ethers.utils.arrayify(
+      ethers.utils.joinSignature(signer._signingKey().signDigest(signedTxHash0))
     );
 
-    let DAI_BALANCE = DAI.balanceOf(signer?.getAddress());
-    console.log("DAI Balance BEFORE of the user: ", DAI_BALANCE);
+    console.log("TX 0 CALCULATEFD!");
+    tx0.customData = {
+      ...tx0.customData,
+      customSignature: signature0,
+    };
 
-    const calls = [
-      {
-        to: Lender.address,
-        value: 0,
-        data: Lender.interface.encodeFunctionData("borrowEther", [usdcAmount]),
-      },
-      {
-        to: WETH.address,
-        value: 0,
-        data: WETH.interface.encodeFunctionData("approve", [
-          ROUTER_ADDRESS,
-          MAX_APPROVE,
-        ]),
-      },
-      {
-        to: Router.address,
-        value: value,
-        data: Router.interface.encodeFunctionData("swap", [
-          paths,
-          0,
-          Math.floor(Date.now() / 1000) + 60 * 10,
-        ]),
-      },
-    ];
+    let tx1 = await Lender.populateTransaction.borrowEther(usdcAmount);
 
-    const response = await account.multicall(calls, { from: accountAddress }); // send to account itself
+    tx1 = {
+      ...tx1,
+      from: aa_address,
+      to: Lender.address,
+      chainId: 280,
+      nonce: await provider.getTransactionCount(aa_address),
+      customData: {
+        gasPerPubdata: utils.DEFAULT_GAS_PER_PUBDATA_LIMIT,
+      } as types.Eip712Meta,
+      value: ethers.utils.parseEther("0"),
+      data: Lender.interface.encodeFunctionData("borrowEther", [usdcAmount]),
+    };
+
+    tx1.gasPrice = await provider.getGasPrice();
+    tx1.gasLimit = await provider.estimateGas(tx1);
+
+    console.log(
+      "Function data:",
+      Lender.interface.encodeFunctionData("borrowEther", [usdcAmount])
+    );
+
+    const signedTxHash = EIP712Signer.getSignedDigest(tx1);
+    const signature = ethers.utils.arrayify(
+      ethers.utils.joinSignature(signer._signingKey().signDigest(signedTxHash))
+    );
+
+    console.log("Calculeted tx1");
+
+    tx1.customData = {
+      ...tx1.customData,
+      customSignature: signature,
+    };
+
+    let calls: any = [utils.serialize(tx0), utils.serialize(tx1)];
+
+    console.log(
+      "Function data:",
+      Lender.interface.encodeFunctionData("borrowEther", [usdcAmount])
+    );
+    const response = await account.multicall(calls); // send to account itself
     const result = await response.wait();
 
     console.log("Multicall! HERE: ", result);
-
-    DAI_BALANCE = await DAI.balanceOf(signer?.getAddress());
-    console.log("DAI Balance AFTER of the user: ", DAI_BALANCE);
 
     const interfaceId = multicallInterface.getSighash("multicall");
     console.log(interfaceId);
@@ -325,103 +424,148 @@ export default function Swap() {
                 fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
                 padding={1}
               >
-                <Text
-                  color={"white"}
-                  fontWeight={400}
-                  fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
-                >
-                  zkSync Token Balance
-                </Text>
-                <TokensBalanceDisplay />
-                <br /> <br />
-                {/* Approve Section */}
-                <Text
-                  color={"red.100"}
-                  fontWeight={500}
-                  fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
-                >
-                  #1
-                </Text>
-                <Text
-                  color={"gray.100"}
-                  fontWeight={500}
-                  fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
-                >
-                  Approve spending and set CAP LIMIT on your transactions.
-                </Text>
+                {/* <Text
+                color={"white"}
+                fontWeight={400}
+                fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                py={2}
+              >
+                zkSync Token Balance
+              </Text>
+              <TokensBalanceDisplay /> */}
+
                 <br />
-                <Container maxW={"3xl"}>
-                  <Button
-                    fontSize="24px"
-                    transition={"all 0.3s ease"}
-                    colorScheme={"blue"}
-                    bgImage={
-                      "linear-gradient(to right, rgb(1 134 218), rgb(182 49 167))"
-                    }
-                    border={"1"}
-                    rounded={"full"}
-                    px={12}
-                    py={8}
-                    _hover={{
-                      border: "1px solid rgba(var(--primary-color), 0.5)",
-                      color: "yellow",
-                      transition: "all 2s ease",
-                    }}
-                    disabled={!write1}
-                    onClick={handleApprove}
-                  >
-                    {" "}
-                    Approve
-                  </Button>
+                <br />
+                                {/* Abstract Account */}
+                                <Container maxW={"3xl"}>
+                  <Flex align="center">
+                    <Text
+                      color={"red.100"}
+                      fontWeight={500}
+                      fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                    >
+                      #1
+                    </Text>
+                    <Text
+                      color={"gray.100"}
+                      fontWeight={500}
+                      fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                      px={40}
+                    >
+                      Deploy Your Abstract Account
+                    </Text>
+                    <Button
+                      fontSize="24px"
+                      transition={"all 0.3s ease"}
+                      colorScheme={"blue"}
+                      bgImage={
+                        "linear-gradient(to right, RGB(220,77,1), RGB(234, 206, 9))"
+                      }
+                      border={"1"}
+                      rounded={"full"}
+                      fontWeight={700}
+                      px={12}
+                      py={8}
+                      _hover={{
+                        border: "1px solid rgba(var(--primary-color), 0.5)",
+                        color: "black",
+                        transition: "all 2s ease",
+                      }}
+                      onClick={handleDeployAA}
+                    >
+                      {" "}
+                      DEPLOY!
+                    </Button>
+                    <br />
+                  </Flex>
                 </Container>
-                <br />
-                <br />
-                {/* Swap */}
-                <Text
-                  color={"red.100"}
-                  fontWeight={500}
-                  fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
-                >
-                  #2
-                </Text>
-                <Text
-                  color={"gray.100"}
-                  fontWeight={500}
-                  fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
-                >
-                  Swap.
-                </Text>
-                <br />
-                <Text
-                  color={"red.100"}
-                  fontWeight={600}
-                  fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
-                >
-                  USDC --&#62; ETH --&#62; WETH --&#62; DAI (One Click) USDC
-                  --&#62; ETH --&#62; WETH --&#62; APPROVE --&#62; DAI
-                </Text>
-                <br />
-                <Button
-                  fontSize="24px"
-                  transition={"all 0.3s ease"}
-                  colorScheme={"blue"}
-                  bgImage={
-                    "linear-gradient(to right, rgb(1 134 218), rgb(182 49 167))"
-                  }
-                  border={"1"}
-                  rounded={"full"}
-                  px={12}
-                  py={8}
-                  _hover={{
-                    border: "1px solid rgba(var(--primary-color), 0.5)",
-                    color: "yellow",
-                    transition: "all 2s ease",
-                  }}
-                  onClick={handleSwap}
-                >
-                  {" "}
-                  SWAP{" "}
-                </Button>
+                <br /> <br />
+                {/* Send Ether */}
+                <Container maxW={"3xl"}>
+                  <Flex align="center">
+                    <Text
+                      color={"red.100"}
+                      fontWeight={500}
+                      fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                    >
+                      #2
+                    </Text>
+                    <Text
+                      color={"gray.100"}
+                      fontWeight={500}
+                      fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                      px={40}
+                    >
+                      Send ETH to Your Account
+                    </Text>
+                    <Button
+                      fontSize="24px"
+                      transition={"all 0.3s ease"}
+                      colorScheme={"blue"}
+                      bgImage={
+                        "linear-gradient(to right, RGB(220,77,1), RGB(234, 206, 9))"
+                      }
+                      border={"1"}
+                      rounded={"full"}
+                      fontWeight={700}
+                      px={12}
+                      py={8}
+                      _hover={{
+                        border: "1px solid rgba(var(--primary-color), 0.5)",
+                        color: "black",
+                        transition: "all 2s ease",
+                      }}
+                      onClick={sendETHtoAA}
+                    >
+                      Send ETH
+                    </Button>
+                    <br />
+                  </Flex>
+                </Container>
+                <br /><br />
+                {/* Borrow */}
+                <Container maxW={"3xl"}>
+                  <Flex align="center">
+                    <Text
+                      color={"red.100"}
+                      fontWeight={500}
+                      fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                    >
+                      #3
+                    </Text>
+                    <Text
+                      color={"gray.100"}
+                      fontWeight={500}
+                      fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                      px={48}
+                    >
+                      Borrow.
+                    </Text>
+                    <br />
+                    <Button
+                      fontSize="24px"
+                      transition={"all 0.3s ease"}
+                      colorScheme={"blue"}
+                      bgImage={
+                        "linear-gradient(to right, RGB(220,77,1), RGB(234, 206, 9))"
+                      }
+                      fontWeight={700}
+                      border={"1"}
+                      rounded={"full"}
+                      px={12}
+                      py={8}
+                      _hover={{
+                        border: "1px solid rgba(var(--primary-color), 0.5)",
+                        color: "black",
+                        transition: "all 2s ease",
+                      }}
+                      onClick={() => write2?.()}
+                    >
+                      {" "}
+                      BORROW{" "}
+                    </Button>
+                  </Flex>
+                </Container>
                 <br />
                 <br />
                 <Text
@@ -441,82 +585,159 @@ export default function Swap() {
                 ></Input>
                 <br />
                 <br />
-                {/* Borrow */}
+                {/* Approve Section */}
+                <Container maxW={"3xl"}>
+                  <Flex align="center">
+                    <Text
+                      color={"red.100"}
+                      fontWeight={500}
+                      fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                    >
+                      #4
+                    </Text>
+                    <Text
+                      color={"gray.100"}
+                      fontWeight={500}
+                      fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                      px={16}
+                    >
+                      Approve WETH and set spending cap.
+                    </Text>
+                    <br />
+                    <br />
+
+                    <Button
+                      fontSize="24px"
+                      transition={"all 0.3s ease"}
+                      colorScheme={"blue"}
+                      bgImage={
+                        "linear-gradient(to right, RGB(220,77,1), RGB(234, 206, 9))"
+                      }
+                      fontWeight={700}
+                      border={"1"}
+                      rounded={"full"}
+                      px={12}
+                      py={8}
+                      _hover={{
+                        border: "1px solid rgba(var(--primary-color), 0.5)",
+                        color: "black",
+                        transition: "all 2s ease",
+                      }}
+                      disabled={!write1}
+                      onClick={handleApprove}
+                    >
+                      {" "}
+                      APPROVE
+                    </Button>
+                  </Flex>
+                </Container>
+                <br />
+                {/* Swap */}
+                <br />
                 <Text
+                  maxW={"lg"}
                   color={"red.100"}
-                  fontWeight={500}
+                  fontWeight={600}
                   fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
                 >
-                  #3
-                </Text>
-                <Text
-                  color={"gray.100"}
-                  fontWeight={500}
-                  fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
-                >
-                  Borrow.
+                  USDC --&#62; Borrow ETH from LP --&#62; Swap ETH --&#62; WETH
+                  --&#62; DAI
+                  <br />
+                  <br />
+                  Using WETH we approve WETH for allowance
+                  <br />
+                  <br />
                 </Text>
                 <br />
-                <Button
-                  fontSize="24px"
-                  transition={"all 0.3s ease"}
-                  colorScheme={"blue"}
-                  bgImage={
-                    "linear-gradient(to right, rgb(1 134 218), rgb(182 49 167))"
-                  }
-                  border={"1"}
-                  rounded={"full"}
-                  px={12}
-                  py={8}
-                  _hover={{
-                    border: "1px solid rgba(var(--primary-color), 0.5)",
-                    color: "yellow",
-                    transition: "all 2s ease",
-                  }}
-                  onClick={() => write2?.()}
-                >
-                  {" "}
-                  BORROW{" "}
-                </Button>
+                <Container maxW={"3xl"}>
+                  <Flex align="center">
+                    <Text
+                      color={"red.100"}
+                      fontWeight={500}
+                      fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                    >
+                      #5
+                    </Text>
+                    <Text
+                      color={"gray.100"}
+                      fontWeight={500}
+                      fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                      px={52}
+                    >
+                      Swap.
+                    </Text>
+                    <br />
+                    <br />
+                    <Button
+                      fontSize="24px"
+                      transition={"all 0.3s ease"}
+                      colorScheme={"blue"}
+                      bgImage={
+                        "linear-gradient(to right, RGB(220,77,1), RGB(234, 206, 9))"
+                      }
+                      border={"1"}
+                      rounded={"full"}
+                      px={12}
+                      fontWeight={700}
+                      py={8}
+                      _hover={{
+                        border: "1px solid rgba(var(--primary-color), 0.5)",
+                        color: "black",
+                        transition: "all 2s ease",
+                      }}
+                      onClick={handleSwap}
+                    >
+                      {" "}
+                      SWAP{" "}
+                    </Button>
+                  </Flex>
+                </Container>
+
                 <br />
                 <br />
                 {/* MultiCall */}
-                <Text
-                  color={"red.100"}
-                  fontWeight={500}
-                  fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
-                >
-                  #3
-                </Text>
-                <Text
-                  color={"gray.100"}
-                  fontWeight={500}
-                  fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
-                >
-                  Multicall.
-                </Text>
-                <br />
-                <Button
-                  fontSize="24px"
-                  transition={"all 0.3s ease"}
-                  colorScheme={"blue"}
-                  bgImage={
-                    "linear-gradient(to right, rgb(1 134 218), rgb(182 49 167))"
-                  }
-                  border={"1"}
-                  rounded={"full"}
-                  px={12}
-                  py={8}
-                  _hover={{
-                    border: "1px solid rgba(var(--primary-color), 0.5)",
-                    color: "yellow",
-                    transition: "all 2s ease",
-                  }}
-                  onClick={handleMulticall}
-                >
-                  {" "}
-                  MULTICALL! F* YEAH!{" "}
-                </Button>
+                <Container maxW={"3xl"}>
+                  <Flex align="center">
+                    <Text
+                      color={"red.100"}
+                      fontWeight={500}
+                      fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                    >
+                      #6
+                    </Text>
+                    <Text
+                      color={"gray.100"}
+                      fontWeight={500}
+                      fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                      px={40}
+                    >
+                      Multicall.
+                    </Text>
+                    <br />
+                    <Button
+                      fontSize="24px"
+                      transition={"all 0.3s ease"}
+                      colorScheme={"blue"}
+                      bgImage={
+                        "linear-gradient(to right, RGB(220,77,1), RGB(234, 206, 9))"
+                      }
+                      border={"1"}
+                      rounded={"full"}
+                      fontWeight={700}
+                      px={12}
+                      py={8}
+                      _hover={{
+                        border: "1px solid rgba(var(--primary-color), 0.5)",
+                        color: "black",
+                        transition: "all 2s ease",
+                      }}
+                      onClick={handleMulticall}
+                    >
+                      {" "}
+                      MULTICALL! F* YEAH!{" "}
+                    </Button>
+                  </Flex>
+                </Container>
                 {/* State */}
                 <Text
                   color={"white"}
@@ -532,11 +753,8 @@ export default function Swap() {
                     <div>Transaction: {JSON.stringify(data2)}</div>
                   )}
                 </Text>
-                {/* <SwapModal isOpen={isOpen} onClose={() => setIsOpen(false)} /> */}
               </Container>
-
-              <br /> <br /> <br />
-              <br />
+              <br /> <br /> <br /> <br />
               <hr />
               <br />
               <br />
@@ -544,86 +762,138 @@ export default function Swap() {
               <br />
               <br />
               <hr />
+              <br /> <br />
+              <br /> <br />
               <br /> <br />{" "}
-              <Container centerContent maxW={"3xl"} py={8}>
-                <Text
-                  color={"gray.100"}
-                  fontWeight={500}
-                  fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
-                  padding={10}
-                >
-                  One-Click DEX Swaps
-                  <br />
-                  <br />
-                  ....
-                </Text>
-
-                <SwapModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
+              <Container centerContent maxW={"3xl"} py={2}>
+                <Flex align="center">
+                  <Text
+                    color={"gray.100"}
+                    fontWeight={500}
+                    fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                    padding={10}
+                  >
+                    One-Click DEX Swaps
+                    <br />
+                    <br />
+                    ....
+                  </Text>
+                  <Button
+                    fontSize="24px"
+                    transition={"all 0.3s ease"}
+                    bgColor={"gray.500"}
+                    border={"1"}
+                    rounded={"full"}
+                    px={12}
+                    py={8}
+                    _hover={{
+                      border: "1px solid rgba(var(--primary-color), 0.5)",
+                      color: "red",
+                      transition: "all 2s ease",
+                    }}
+                    onClick={() => router.push("/your-zaaps")}
+                  >
+                    Soon&#8482;
+                  </Button>
+                </Flex>
               </Container>
-              <Container centerContent maxW={"3xl"} py={8}>
-                <Text
-                  color={"gray.100"}
-                  fontWeight={500}
-                  fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
-                  padding={10}
-                >
-                  LP Withdraw & Buy
-                  <br />
-                  <br />
-                  Deposit ETH into AAVE(any lending on protocool on zkSync
-                  testnet), withdraw USDC and swap ETH to perform desired
-                  action.
-                </Text>
-                <SwapModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
+              <Container centerContent maxW={"3xl"} py={2}>
+                <Flex align="center">
+                  <Text
+                    color={"gray.100"}
+                    fontWeight={500}
+                    fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                    padding={10}
+                  >
+                    LP Withdraw & Buy
+                    <br />
+                    <br />
+                    Deposit ETH into AAVE(any lending on protocool on zkSync
+                    testnet), withdraw USDC and swap ETH to perform desired
+                    action.
+                  </Text>
+                  <Button
+                    fontSize="24px"
+                    transition={"all 0.3s ease"}
+                    bgColor={"gray.500"}
+                    border={"1"}
+                    rounded={"full"}
+                    px={12}
+                    py={8}
+                    _hover={{
+                      border: "1px solid rgba(var(--primary-color), 0.5)",
+                      color: "red",
+                      transition: "all 2s ease",
+                    }}
+                    onClick={() => router.push("/your-zaaps")}
+                  >
+                    Soon&#8482;
+                  </Button>
+                </Flex>
               </Container>
-              <Container centerContent maxW={"3xl"} py={8}>
-                <Text
-                  color={"gray.100"}
-                  fontWeight={500}
-                  fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
-                  padding={10}
-                >
-                  One-Click Multichain NFT Purchase
-                  <br />
-                  <br />
-                  ....
-                </Text>
-                <SwapModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
+              <Container centerContent maxW={"3xl"} py={2}>
+                <Flex align="center">
+                  <Text
+                    color={"gray.100"}
+                    fontWeight={500}
+                    fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                    padding={10}
+                  >
+                    One-Click Multichain NFT Purchase
+                    <br />
+                    <br />
+                    ....
+                  </Text>
+                  <Button
+                    fontSize="24px"
+                    transition={"all 0.3s ease"}
+                    bgColor={"gray.500"}
+                    border={"1"}
+                    rounded={"full"}
+                    px={12}
+                    py={8}
+                    _hover={{
+                      border: "1px solid rgba(var(--primary-color), 0.5)",
+                      color: "red",
+                      transition: "all 2s ease",
+                    }}
+                    onClick={() => router.push("/your-zaaps")}
+                  >
+                    Soon&#8482;
+                  </Button>
+                </Flex>
               </Container>
-              <Container centerContent maxW={"3xl"} py={8}>
-                <Text
-                  color={"gray.100"}
-                  fontWeight={500}
-                  fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
-                  padding={10}
-                >
-                  Private Swaps
-                  <br />
-                  <br />
-                  ....
-                </Text>
-                <SwapModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
+              <Container centerContent maxW={"3xl"} py={2}>
+                <Flex align="center">
+                  <Text
+                    color={"gray.100"}
+                    fontWeight={500}
+                    fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
+                    padding={10}
+                  >
+                    Private Swaps
+                  </Text>
+                  <Button
+                    fontSize="24px"
+                    transition={"all 0.3s ease"}
+                    bgColor={"gray.500"}
+                    border={"1"}
+                    rounded={"full"}
+                    px={12}
+                    py={8}
+                    _hover={{
+                      border: "1px solid rgba(var(--primary-color), 0.5)",
+                      color: "red",
+                      transition: "all 2s ease",
+                    }}
+                    onClick={() => router.push("/your-zaaps")}
+                  >
+                    Soon&#8482;
+                  </Button>
+                </Flex>
               </Container>
             </Stack>
           </Stack>
-
-          <Container
-            centerContent
-            maxW={"3xl"}
-            fontWeight={500}
-            fontSize={{ base: "xl", sm: "xl", md: "2xl" }}
-          >
-            <Text fontWeight={500}>List of zkSync Testnet Tokens:</Text>
-            <br />
-            <Link
-              fontWeight={400}
-              href="https://zksync2-testnet.zkscan.io/tokens"
-            >
-              https://zksync2-testnet.zkscan.io/tokens
-            </Link>
-          </Container>
-
-          <br />
         </Container>
       </main>
     </div>

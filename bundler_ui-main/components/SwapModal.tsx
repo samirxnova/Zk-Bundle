@@ -97,7 +97,7 @@ export default function SwapModal() {
             <br />
 
             <Text fontWeight="600" color={"gray.600"}>
-              Available ETH: 
+              Available ETH: 0.42025
             </Text>
 
             <br />
@@ -125,25 +125,30 @@ export default function SwapModal() {
                   <Tbody>
                     <Tr>
                       <Td>Uniswap</Td>
-                      <Td></Td>
+                      <Td>$0.00011</Td>
                     </Tr>
                     <Tr>
-                      <Td>Mute.io</Td>
-                      <Td></Td>
+                      <Td>1inch</Td>
+                      <Td>$0.0038</Td>
                     </Tr>
                     <Tr>
-                      <Td>Oribiter</Td>
-                      <Td></Td>
+                      <Td>Balancer</Td>
+                      <Td>$0.0000042</Td>
                     </Tr>
                     <Tr>
-                      <Td>Aave</Td>
-                      <Td></Td>
+                      <Td>MetaMask</Td>
+                      <Td>$0.00032</Td>
                     </Tr>
                   </Tbody>
                 </Table>
               </TableContainer>
             </Container>
 
+            <br />
+
+            <Text fontWeight="600" color={"gray.600"}>
+              Approx. Pool Output
+            </Text>
             <br />
           </ModalBody>
           <ModalFooter>

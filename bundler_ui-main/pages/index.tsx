@@ -15,6 +15,7 @@ import styles from "../styles/Home.module.css";
 import TokensBalanceDisplay from "../components/tokensBalanceDisplay";
 import { useRouter } from "next/router";
 import ZKS from "../public/zks.png";
+import Bolt2 from "../public/bolt2.png";
 
 export default function Home() {
   const router = useRouter();
@@ -43,7 +44,7 @@ export default function Home() {
 
             <Container centerContent maxW={"3xl"}>
               <Image
-                src={ZKS}
+                src={Bolt2}
                 alt="logo"
                 width={400}
                 height={400}
@@ -94,15 +95,16 @@ export default function Home() {
                 transition={"all 0.3s ease"}
                 colorScheme={"blue"}
                 bgImage={
-                  "linear-gradient(to right, rgb(1 134 218), rgb(182 49 167))"
+                  "linear-gradient(to right, RGB(220,77,1), RGB(234, 206, 9))"
                 }
+                fontWeight={700}
                 border={"1"}
                 rounded={"full"}
                 px={12}
                 py={8}
                 _hover={{
                   border: "1px solid rgba(var(--primary-color), 0.5)",
-                  color: "yellow",
+                  color: "black",
                   transition: "all 2s ease",
                 }}
                 onClick={() => router.push("/your-zaaps")}
